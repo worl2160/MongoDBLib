@@ -4,6 +4,8 @@
 		private $CI;
 		private $manager;
 		private $connection_string;
+		private $collection;
+		private $namespace;
 		
 		private $host;
 		private $port;
@@ -82,11 +84,14 @@
 
 		public function switch_db($database = '') {
 			!empty($database) or show_error("To switch MongoDB databases, a new database name must be specified", 500);
-			$this->dbname = $database;
+			$this->dbname = trim($database);
+			$this->namespace = implode('.', [$this->dbname, $this->collection]);
 		}
 
-		public function from($database = '') {
-			$this->switch_db($database);
+		public function from($collection = '') {
+			!empty($collection) or show_error("In order to retreive documents from MongoDB, a collection name must be passed", 500);
+			$this->collection = trim($collection);
+			$this->namespace = implode('.', [$this->dbname, $this->collection]);
 		}
 
 		public function select(array $includes = [], array $excludes = []) {
@@ -188,12 +193,12 @@
 		}
 
 		public function get($collection = "") {
-			!empty($collection) or show_error("In order to retreive documents from MongoDB, a collection name must be passed", 500);
+			$this->from($collection);
 			$options = ['projection' => $this->selects, 'sort' => $this->sorts, 'limit' => $this->limit, 'skip' => $this->offset];
 			$returns = [];
 			try {
 				$query = new MongoDB\Driver\Query($this->wheres, $options);
-				$cursor = $this->manager->executeQuery($this->dbname, $query);
+				$cursor = $this->manager->executeQuery($this->namespace, $query);
 				$returns = $cursor->toArray();
 			} catch (MongoDB\Driver\Exception\BulkWriteException $e) {
 				$this->BWException($e);
@@ -205,8 +210,8 @@
 		}
 
 		public function count($collection = "") {
-			!empty($collection) or show_error("In order to retreive a count of documents from MongoDB, a collection name must be passed", 500);
-			$cmd = new MongoDB\Driver\Command(['collStats' => $collection]);
+			$this->from($collection);
+			$cmd = new MongoDB\Driver\Command(['collStats' => $this->collection]);
 			$returns = [];
 
 			try{
@@ -229,13 +234,13 @@
 		}
 
 		public function insert($collection = "", array $data = []) {
-			!empty($collection) or show_error("No Mongo collection selected to insert into", 500);
+			$this->from($collection);
 			(count($data) != 0) or show_error("Nothing to insert into Mongo collection or insert is not an array", 500);
 			
 			try {
 				$bulk = new MongoDB\Driver\BulkWrite;
 				$bulk->insert($data);
-				$writeResult = $this->manager->executeBulkWrite(implode('.', [$this->dbname, $collection]), $bulk);
+				$writeResult = $this->manager->executeBulkWrite($this->namespace, $bulk);
 			} catch(MongoDB\Driver\Exception\BulkWriteException $e) {
 				BWException("Insert of data into MongoDB failed", $e);
 			} catch (MongoDB\Driver\Exception\Exception $e) {
@@ -246,7 +251,7 @@
 		}
 
 		public function update($collection = "", array $data = [], bool $insertWhenEmpty = false, bool $patchAll = false) {
-			!empty($collection) or show_error("No Mongo collection selected to update", 500);
+			$this->from($collection);
 			(count($data) != 0) or show_error("Nothing to update in Mongo collection or update is not an array", 500);
 
 			$option = ['upsert' => $insertWhenEmpty, 'multi' => $patchAll];
@@ -254,7 +259,7 @@
 			try {
 				$bulk = new MongoDB\Driver\BulkWrite;
 				$bulk->update($this->wheres, $data, $option);
-				$writeResult = $this->manager->executeBulkWrite(implode('.', [$this->dbname, $collection]), $bulk);
+				$writeResult = $this->manager->executeBulkWrite($this->namespace, $bulk);
 			} catch(MongoDB\Driver\Exception\BulkWriteException $e) {
 				BWException("Update of data into MongoDB failed", $e);
 			} catch (MongoDB\Driver\Exception\Exception $e) {
@@ -269,13 +274,13 @@
 		}
 
 		public function delete($collection = "", bool $justOne = true) {
-			!empty($collection) or show_error("No Mongo collection selected to delete from", 500);
+			$this->from($collection);
 			
 			$option = ['limit' => $justOne];
 			try {
 				$bulk = new MongoDB\Driver\BulkWrite;
 				$bulk->delete($this->wheres, $option);
-				$writeResult = $this->manager->executeBulkWrite(implode('.', [$this->dbname, $collection]), $bulk);
+				$writeResult = $this->manager->executeBulkWrite($this->namespace, $bulk);
 			} catch(MongoDB\Driver\Exception\BulkWriteException $e) {
 				BWException("Delete of data into MongoDB failed", $e);
 			} catch (MongoDB\Driver\Exception\Exception $e) {
@@ -299,7 +304,7 @@
 		}
 
 		public function insert_batch($collection = "", array $data = []){
-			!empty($collection) or show_error("No Mongo collection selected to batch insert into", 500);
+			$this->from($collection);
 			(count($data) != 0) or show_error("Nothing to insert into Mongo collection or insert is not an array", 500);
 			
 			try {
@@ -307,7 +312,7 @@
 				foreach ($data as $doc) {
 					$bulk->insert($doc);
 				}
-				$writeResult = $this->manager->executeBulkWrite(implode('.', [$this->dbname, $collection]), $bulk);
+				$writeResult = $this->manager->executeBulkWrite($this->namespace, $bulk);
 			} catch(MongoDB\Driver\Exception\BulkWriteException $e) {
 				BWException("Insert tons of data into MongoDB failed", $e);
 			} catch (MongoDB\Driver\Exception\Exception $e) {
@@ -318,7 +323,7 @@
 			
 		}
 		public function update_batch($collection = "", array $data = []){
-			!empty($collection) or show_error("No Mongo collection selected to batch update", 500);
+			$this->from($collection);
 			(count($data) != 0) or show_error("Nothing to update Mongo collection or update is not an array", 500);
 
 			try {
@@ -326,7 +331,7 @@
 				foreach ($data as $doc) {
 					$bulk->update($doc);
 				}
-				$writeResult = $this->manager->executeBulkWrite(implode('.', [$this->dbname, $collection]), $bulk);
+				$writeResult = $this->manager->executeBulkWrite($this->namespace, $bulk);
 			} catch(MongoDB\Driver\Exception\BulkWriteException $e) {
 				BWException("Update tons of data into MongoDB failed", $e);
 			} catch (MongoDB\Driver\Exception\Exception $e) {
