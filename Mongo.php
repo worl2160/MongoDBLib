@@ -1,4 +1,10 @@
 <?php
+	defined('BASEPATH') OR exit('No direct script access allowed');
+
+	/*
+	 *author: Sober
+	 *
+	*/
 	class Mongo{
 
 		private $CI;
@@ -85,7 +91,7 @@
 		public function switch_db($database = '') {
 			!empty($database) or show_error("To switch MongoDB databases, a new database name must be specified", 500);
 			$this->dbname = trim($database);
-			$this->namespace = implode('.', [$this->dbname, $this->collection]);
+			if(!empty($this->collection)) $this->namespace = implode('.', [$this->dbname, $this->collection]);
 		}
 
 		public function from($collection = '') {
@@ -205,18 +211,20 @@
 			} catch (MongoDB\Driver\Exception\Exception $e) {
 				show_error("Other error: " . $e->getMessage());
 			}
-			
+			$this->clear();
 			return $returns;
 		}
 
-		public function count($collection = "") {
+		public function count($collection = "", $option = []) {
 			$this->from($collection);
-			$cmd = new MongoDB\Driver\Command(['collStats' => $this->collection]);
+			$cmd = new MongoDB\Driver\Command([
+				'count' => $this->collection,
+				'query' => $option
+			]);
 			$returns = [];
-
 			try{
 				$cursor = $this->manager->executeCommand($this->dbname, $cmd);
-				$returns = $cursor->toArray();
+				$returns = current($cursor->toArray());
 			} catch (MongoDB\Driver\Exception\Exception $e) {
 				$filename = basename(__FILE__);
 				$str = '';
@@ -228,9 +236,8 @@
 				show_error($str);
 			}
 
-			$count = isset($returns['count'])? $returns['count'] : false;
 			$this->clear();
-			return $count;
+			return $returns->n;
 		}
 
 		public function insert($collection = "", array $data = []) {
@@ -246,7 +253,7 @@
 			} catch (MongoDB\Driver\Exception\Exception $e) {
 				show_error("Other error: " . $e->getMessage());
 			}
-
+			$this->clear();
 			return $writeResult->getInsertedCount() == 1;
 		}
 
@@ -265,7 +272,7 @@
 			} catch (MongoDB\Driver\Exception\Exception $e) {
 				show_error("Other error: " . $e->getMessage());
 			}
-			
+			$this->clear();
 			return ($insertWhenEmpty? $writeResult->getUpsertedCount() : $writeResult->getModifiedCount()) == 1;
 		}
 
@@ -273,7 +280,7 @@
 			return $this->update($collection = "", $data = [], false, true);
 		}
 
-		public function delete($collection = "", bool $justOne = true) {
+		public function delete($collection = "", int $justOne = 1) {
 			$this->from($collection);
 			
 			$option = ['limit' => $justOne];
@@ -286,17 +293,17 @@
 			} catch (MongoDB\Driver\Exception\Exception $e) {
 				show_error("Other error: " . $e->getMessage());
 			}
-			
+			$this->clear();
 			return $writeResult->getDeletedCount();
 		}
 
 		public function delete_all($collection = ""){
-			return $this->delete($collection = "", false);
+			return $this->delete($collection, false);
 		}
 
 		public function empty_table($collection = ""){
 			$this->wheres = [];
-			return $this->delete_all();
+			return $this->delete_all($collection);
 		}
 
 		public function truncate($collection = ""){
@@ -322,6 +329,7 @@
 			return $writeResult->getInsertedCount();
 			
 		}
+		/*
 		public function update_batch($collection = "", array $data = []){
 			$this->from($collection);
 			(count($data) != 0) or show_error("Nothing to update Mongo collection or update is not an array", 500);
@@ -338,7 +346,7 @@
 				show_error("Other error: " . $e->getMessage());
 			}
 		}
-
+		*/
 		public function reset_query(){
 			$this->clear();
 		}
